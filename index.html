@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Wikidata 紀要一覧</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 20px;
+        }
+        #status {
+            margin-bottom: 10px;
+        }
+        #filterInput {
+            display: none;
+            width: 400px;
+            padding: 6px;
+            margin-bottom: 10px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        th,
+        td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f5f5f5;
+        }
+        #name th {
+            width: 40%;
+        }
+        #pub th {
+            width: 30%;
+        }
+        a {
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        details summary {
+            cursor: pointer;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Wikidata 紀要一覧</h1>
+    <div id="status">初期化中...</div>
+    <details>
+        <summary>このサイトについて</summary>
+        <ul>
+            <li>wikidata で プロパティ https://www.wikidata.org/wiki/Q11605103 を持つ紀要の一覧を出力します。</li>
+            <li>Q11605103 は Wikidata の「紀要 (kiyō)」 の項目です。</li>
+            <li>タイトル、出版者から検索できます。</li>
+            <li>正規表現が使えます。全件表示したい場合は、. (ドット)を入力してください。</li>
+    </details>
+    <input type="text" id="filterInput" placeholder="雑誌名、大学名を入力 (. で全件表示)例: . / 東京 / 東京|京都 / ^日本">
+    <div id="tableContainer" style="display:none;">
+        <table id="resultTable">
+            <thead>
+                <tr>
+                    <th id="name">名称</th>
+                    <th id="desc">説明</th>
+                    <th id="pub">出版者</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+    <script>
+        class SPARQLQueryDispatcher {
+            constructor(endpoint) {
+                this.endpoint = endpoint;
+            }
+            query(sparqlQuery) {
+                const url =
+                    this.endpoint +
+                    "?query=" +
+                    encodeURIComponent(sparqlQuery);
+                return fetch(url, {
+                    headers: {
+                        "Accept": "application/sparql-results+json"
+                    }
+                }).then(response => response.json());
+            }
+        }
+        const endpointUrl =
+            "https://query.wikidata.org/sparql";
+        const sparqlQuery = `
+SELECT ?item ?itemLabel ?itemDescription ?publisher ?publisherLabel WHERE {
+    ?item wdt:P31/wdt:P279* wd:Q11605103 ;
+          wdt:P123 ?publisher .
+    SERVICE wikibase:label {
+        bd:serviceParam wikibase:language "ja,en".
+    }
+}
+`;
+        const queryDispatcher =
+            new SPARQLQueryDispatcher(endpointUrl);
+        console.log(queryDispatcher); //===================================================
+        const statusDiv =
+            document.getElementById("status");
+        const filterInput =
+            document.getElementById("filterInput");
+        const tableContainer =
+            document.getElementById("tableContainer");
+        const tbody =
+            document.querySelector("#resultTable tbody");
+        let records = [];
+        /* =========================
+           起動時
+        ========================= */
+        window.addEventListener(
+            "DOMContentLoaded",
+            loadData
+        );
+        /* =========================
+           データ取得
+        ========================= */
+        async function loadData() {
+            statusDiv.textContent = "取得中...";
+            try {
+                const data =
+                    await queryDispatcher.query(sparqlQuery);
+                console.log("dataha::", data); //=====================================================-
+                records =
+                    data.results.bindings.map(row => ({
+                        label: row.itemLabel?.value ?? "",
+                        description: row.itemDescription?.value ?? "",
+                        url: row.item?.value ?? "",
+                        publisher: row.publisherLabel?.value ?? ""
+                    }));
+                statusDiv.textContent =
+                    `${records.length} 件取得しました。正規表現を入力してください。`;
+                console.log(records); //=====================================================-
+                filterInput.style.display =
+                    "inline-block";
+                filterInput.focus();
+            }
+            catch (error) {
+                console.error(error);
+                statusDiv.textContent =
+                    "データ取得に失敗しました。";
+                filterInput.style.display =
+                    "none";
+            }
+        }
+        /* =========================
+           フィルタ
+        ========================= */
+        filterInput.addEventListener(
+            "input",
+            filterRecords
+        );
+        function filterRecords() {
+            const pattern =
+                filterInput.value.trim();
+            if (!pattern) {
+                tableContainer.style.display = "none";
+                statusDiv.textContent =
+                    `${records.length} 件取得しました。正規表現を入力してください。`;
+                return;
+            }
+            let regex;
+            try {
+                regex = new RegExp(pattern, "iu");
+            } catch (error) {
+                tableContainer.style.display = "none";
+                statusDiv.textContent =
+                    "正規表現エラー";
+                return;
+            }
+            const filtered =
+                records.filter(record => {
+                    const text =
+                        `${record.label} ${record.description} ${record.publisher}`;
+                    return regex.test(text);
+                });
+            renderTable(filtered);
+            statusDiv.textContent =
+                `${filtered.length} 件表示中 / 全 ${records.length} 件`;
+        }
+        /*
+        function filterRecords() {
+            const pattern = filterInput.value.trim();
+            if (!pattern) {
+                tableContainer.style.display = "none";
+                return;
+            }
+            let regex;
+            try {
+                regex = new RegExp(pattern, "iu");
+            }
+            catch (error) {
+                statusDiv.textContent = "正規表現エラー";
+                tableContainer.style.display = "none";
+                return;
+            }
+            const filtered =
+                records.filter(record => {
+                    const text = `${record.label} ${record.description} ${record.publisher}`;
+                    return regex.test(text);
+                });
+            renderTable(filtered);
+            statusDiv.textContent = `${filtered.length} 件表示中 / 全 ${records.length} 件`;
+        }
+        */
+        /* =========================
+           テーブル描画
+        ========================= */
+        function renderTable(data) {
+            tbody.innerHTML = "";
+            for (const item of data) {
+                const tr =
+                    document.createElement("tr");
+                tr.innerHTML = `
+            <td><a href="${item.url}" target="_blank">${escapeHtml(item.label)}</a></td>
+            <td>${escapeHtml(item.description)}</td>
+            <td>${escapeHtml(item.publisher)}</td>
+        `;
+                tbody.appendChild(tr);
+            }
+            tableContainer.style.display = "block";
+        }
+        /* =========================
+           Utility
+        ========================= */
+        function escapeHtml(text) {
+            const div =
+                document.createElement("div");
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
