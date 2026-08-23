@@ -1,0 +1,2 @@
+# wikidata_kiyo
+wikidataのデータを利用して簡易紀要検索システムを作る
